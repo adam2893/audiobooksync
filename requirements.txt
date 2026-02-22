@@ -5,10 +5,10 @@ aiohttp==3.9.1
 sqlalchemy==2.0.23
 apscheduler==3.10.4
 python-dotenv==1.0.0
-gql[all]==3.5.0
+gql[requests]==3.5.0
 aiofiles==23.2.1
 fuzzywuzzy==0.18.0
-python-Levenshtein==0.21.1
-storygraph-wrapper==0.3.0
+Levenshtein==0.21.1
+beautifulsoup4==4.12.2
 pydantic==2.5.0
 pydantic-settings==2.1.0
