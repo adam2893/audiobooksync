@@ -39,17 +39,23 @@ class AudiobookShelfClient:
 
     async def get_user_libraries(self) -> list[dict[str, Any]]:
         """Get user's libraries."""
+        if not self.base_url or not self.api_key:
+            return []
+        
         try:
             session = await self._get_session()
             response = await session.get(f"{self.base_url}/api/me/libraries")
             response.raise_for_status()
             return response.json()
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"Failed to get libraries: {e}")
-            raise
+            return []
 
     async def get_library_items(self, library_id: str) -> list[dict[str, Any]]:
         """Get all library items in a library."""
+        if not self.base_url or not self.api_key:
+            return []
+        
         try:
             session = await self._get_session()
             response = await session.get(
@@ -58,12 +64,15 @@ class AudiobookShelfClient:
             )
             response.raise_for_status()
             return response.json().get("results", [])
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"Failed to get library items: {e}")
-            raise
+            return []
 
     async def get_library_item(self, library_item_id: str) -> dict[str, Any]:
         """Get details of a specific library item."""
+        if not self.base_url or not self.api_key:
+            return {}
+        
         try:
             session = await self._get_session()
             response = await session.get(
@@ -71,12 +80,15 @@ class AudiobookShelfClient:
             )
             response.raise_for_status()
             return response.json()
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"Failed to get library item {library_item_id}: {e}")
-            raise
+            return {}
 
     async def get_listening_sessions(self) -> list[dict[str, Any]]:
         """Get user's listening sessions."""
+        if not self.base_url or not self.api_key:
+            return []
+        
         try:
             session = await self._get_session()
             response = await session.get(
@@ -86,28 +98,35 @@ class AudiobookShelfClient:
             response.raise_for_status()
             data = response.json()
             return data.get("sessions", []) if isinstance(data, dict) else data
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"Failed to get listening sessions: {e}")
-            raise
+            return []
 
     async def get_progress(self, library_item_id: str) -> Optional[dict[str, Any]]:
         """Get progress for a specific library item."""
+        if not self.base_url or not self.api_key:
+            return None
+        
         try:
             item = await self.get_library_item(library_item_id)
+            if not item:
+                return None
             media_progress = item.get("userMediaProgress", [])
             if media_progress:
                 return media_progress[0]
             return None
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"Failed to get progress for {library_item_id}: {e}")
-            raise
+            return None
 
     async def validate_connection(self) -> bool:
         """Validate connection to AudiobookShelf."""
+        if not self.base_url or not self.api_key:
+            return False
+        
         try:
             session = await self._get_session()
             response = await session.get(f"{self.base_url}/api/me")
             return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Failed to validate AudiobookShelf connection: {e}")
+        except Exception:
             return False

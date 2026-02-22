@@ -45,6 +45,9 @@ class StoryGraphClient:
 
     async def search_books(self, query: str) -> list[dict[str, Any]]:
         """Search for books on StoryGraph."""
+        if not query.strip() or not self.session_cookie:
+            return []
+        
         try:
             session = await self._get_session()
             response = await session.get(
@@ -82,6 +85,9 @@ class StoryGraphClient:
 
     async def get_book(self, book_id: str) -> Optional[dict[str, Any]]:
         """Get book details by ID."""
+        if not self.session_cookie:
+            return None
+        
         try:
             session = await self._get_session()
             response = await session.get(f"{self.BASE_URL}/books/{book_id}")
@@ -118,6 +124,9 @@ class StoryGraphClient:
         Returns:
             True if successful, False otherwise
         """
+        if not self.session_cookie:
+            return False
+        
         try:
             session = await self._get_session()
             
@@ -137,11 +146,13 @@ class StoryGraphClient:
 
     async def validate_connection(self) -> bool:
         """Validate connection to StoryGraph."""
+        if not self.session_cookie:
+            return False
+        
         try:
             session = await self._get_session()
             response = await session.get(self.BASE_URL)
             # If we get a successful response and the session is valid, we're good
             return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Failed to validate StoryGraph connection: {e}")
+        except Exception:
             return False

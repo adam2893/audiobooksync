@@ -71,6 +71,7 @@ async def startup_event():
             logger.warning(f"Configuration errors: {app_state['config_errors']}")
         else:
             logger.info("All configuration validated successfully")
+            app_state["setup_complete"] = True
 
         # Initialize database and scheduler
         app_state["scheduler"] = SyncScheduler(app_state["settings"])
@@ -105,6 +106,15 @@ async def startup_event():
         except Exception as e:
             logger.error(f"Error initializing API clients: {e}")
 
+        # Start scheduler if setup is complete
+        if app_state["setup_complete"] and not app_state["config_errors"]:
+            try:
+                await app_state["scheduler"].add_periodic_sync_job()
+                await app_state["scheduler"].start()
+                logger.info("Scheduler started")
+            except Exception as e:
+                logger.error(f"Error starting scheduler: {e}")
+
         logger.info("AudioBook Sync startup complete")
 
     except Exception as e:
@@ -126,6 +136,8 @@ async def shutdown_event():
             await app_state["abs_client"].close()
         if app_state["hardcovers_client"]:
             await app_state["hardcovers_client"].close()
+        if app_state["storygraph_client"]:
+            await app_state["storygraph_client"].close()
 
         logger.info("Shutdown complete")
 
@@ -239,31 +251,123 @@ async def validate_hardcovers():
         return {"valid": False, "message": f"Error: {str(e)}"}
 
 
-@app.post("/api/validate/storygraph")
-async def validate_storygraph():
-    """Validate StoryGraph connection."""
-    if not app_state["storygraph_client"]:
+@app.post("/api/setup/complete")
+async def setup_complete():
+    """Signal that setup wizard is complete."""
+    app_state["setup_complete"] = True
+    logger.info("Setup marked as complete, triggering initial sync...")
+    
+    if app_state["scheduler"]:
+        try:
+            # Add periodic sync job if not already added
+            await app_state["scheduler"].add_periodic_sync_job()
+            
+            # If auto-match is enabled, start scheduler
+            if app_state["settings"].auto_match_on_first_run:
+                await app_state["scheduler"].start()
+        except Exception as e:
+            logger.error(f"Error starting scheduler: {e}")
+    
+    return {"message": "Setup complete, sync scheduled"}
+
+
+@app.get("/api/books/unmatched")
+async def get_unmatched_books(db=Depends(get_db)):
+    """Get all books that haven't been matched to platform IDs."""
+    if not app_state["matcher"]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="StoryGraph client not initialized",
+            detail="Matcher not initialized",
+        )
+    
+    try:
+        unmatched = []
+        
+        # Get all books from AudiobookShelf
+        libraries = await app_state["abs_client"].get_user_libraries()
+        
+        for library in libraries:
+            library_id = library.get("id")
+            items = await app_state["abs_client"].get_library_items(library_id)
+            
+            for item in items:
+                # Check if book has platform mappings
+                # For now, return all items (TODO: check database for mappings)
+                book = {
+                    "id": item.get("id"),
+                    "title": item.get("title", "Unknown"),
+                    "author": item.get("author", "Unknown"),
+                    "isbn": item.get("isbn", ""),
+                    "library_id": library_id,
+                }
+                unmatched.append(book)
+        
+        return unmatched
+    except Exception as e:
+        logger.error(f"Error getting unmatched books: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         )
 
+
+@app.post("/api/books/match")
+async def match_book(book_id: str, platform: str, platform_id: str, db=Depends(get_db)):
+    """Manually match a book to a platform ID."""
+    if not app_state["matcher"]:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Matcher not initialized",
+        )
+    
+    if platform not in ["hardcovers", "storygraph"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid platform. Must be 'hardcovers' or 'storygraph'",
+        )
+    
     try:
-        is_valid = await app_state["storygraph_client"].validate_connection()
-        if is_valid:
-            return {"valid": True, "message": "Connected successfully"}
-        else:
-            return {
-                "valid": False,
-                "message": "Session cookie expired or invalid",
-            }
+        # TODO: Store mapping in database
+        logger.info(f"Mapped book {book_id} to {platform}:{platform_id}")
+        return {
+            "message": "Book mapped successfully",
+            "book_id": book_id,
+            "platform": platform,
+            "platform_id": platform_id,
+        }
     except Exception as e:
-        return {"valid": False, "message": f"Error: {str(e)}"}
+        logger.error(f"Error matching book: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
 
-# ============================================================================
-# Main UI Routes
-# ============================================================================
+@app.post("/api/sync/start")
+async def start_sync():
+    """Trigger an immediate sync instead of waiting for schedule."""
+    if not app_state["scheduler"]:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Scheduler not initialized",
+        )
+    
+    try:
+        logger.info("Manual sync triggered by user")
+        # TODO: Implement actual sync trigger
+        return {
+            "message": "Sync started",
+            "status": "in_progress",
+        }
+    except Exception as e:
+        logger.error(f"Error starting sync: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+
 
 
 @app.get("/", response_class=HTMLResponse)

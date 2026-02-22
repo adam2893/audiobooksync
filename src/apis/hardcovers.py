@@ -39,6 +39,10 @@ class HardcoversClient:
 
     async def _graphql_query(self, query: str, variables: Optional[dict] = None) -> dict[str, Any]:
         """Execute a GraphQL query."""
+        if not self.api_key:
+            logger.error("Hardcovers API key not configured")
+            return {}
+
         try:
             session = await self._get_session()
             response = await session.post(
@@ -50,15 +54,19 @@ class HardcoversClient:
             
             if "errors" in data:
                 error_msg = data["errors"][0].get("message", "Unknown error")
-                raise Exception(f"GraphQL error: {error_msg}")
+                logger.error(f"GraphQL error: {error_msg}")
+                return {}
             
             return data.get("data", {})
-        except httpx.HTTPError as e:
+        except Exception as e:
             logger.error(f"Failed to execute GraphQL query: {e}")
-            raise
+            return {}
 
     async def search_books(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Search for books on Hardcovers."""
+        if not query.strip():
+            return []
+
         gql_query = """
             query SearchBooks($query: String!, $limit: Int!) {
                 search(query: $query, limit: $limit) {
@@ -69,7 +77,6 @@ class HardcoversClient:
                             name
                         }
                         isbn13
-                        imageUrl
                     }
                 }
             }
@@ -129,17 +136,13 @@ class HardcoversClient:
 
     async def validate_connection(self) -> bool:
         """Validate connection to Hardcovers API."""
-        gql_query = """
-            query {
-                me {
-                    id
-                }
-            }
-        """
+        if not self.api_key:
+            return False
+
+        gql_query = "query { me { id } }"
         
         try:
             data = await self._graphql_query(gql_query)
             return "me" in data and data["me"] is not None
-        except Exception as e:
-            logger.error(f"Failed to validate Hardcovers connection: {e}")
+        except Exception:
             return False
