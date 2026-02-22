@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import os
 
-from src.config import get_settings, validate_settings, can_run_sync, Settings
+from src.config import get_settings, validate_settings, can_run_sync, get_storygraph_auth_method, Settings
 from src.apis.audiobookshelf import AudiobookShelfClient
 from src.apis.hardcovers import HardcoversClient
 from src.apis.storygraph import StoryGraphClient
@@ -92,7 +92,9 @@ async def startup_event():
                 app_state["settings"].hardcovers_api_key
             )
             app_state["storygraph_client"] = StoryGraphClient(
-                app_state["settings"].storygraph_session_cookie
+                session_cookie=app_state["settings"].storygraph_session_cookie,
+                username=app_state["settings"].storygraph_username,
+                password=app_state["settings"].storygraph_password,
             )
 
             # Initialize matcher and worker

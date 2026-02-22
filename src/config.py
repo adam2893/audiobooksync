@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     # Hardcovers (optional)
     hardcovers_api_key: str = Field(default="", env="HARDCOVERS_API_KEY")
 
-    # StoryGraph (optional)
+    # StoryGraph (optional - choose one authentication method)
+    # Option 1: Session cookie (read-only, more secure, no password stored)
     storygraph_session_cookie: str = Field(default="", env="STORYGRAPH_SESSION_COOKIE")
+    # Option 2: Username/password (read+write, using storygraph-api)
+    storygraph_username: str = Field(default="", env="STORYGRAPH_USERNAME")
+    storygraph_password: str = Field(default="", env="STORYGRAPH_PASSWORD")
 
     # Sync Configuration
     sync_interval_minutes: int = Field(default=10, env="SYNC_INTERVAL_MINUTES")
@@ -63,8 +67,11 @@ def validate_settings(settings: Settings) -> dict[str, str]:
     # Validate Hardcovers (optional - truly optional, no errors)
     # These are optional integrations, don't add to errors dict
 
-    # Validate StoryGraph (optional - truly optional, no errors)
-    # These are optional integrations, don't add to errors dict
+    # Validate StoryGraph (optional - two authentication options available)
+    # Option 1: Session cookie (read-only, more secure)
+    # Option 2: Username/password (read+write with storygraph-api)
+    # User can provide either, both, or neither - all optional
+    # No errors - just informational in validation response
 
     return errors
 
@@ -80,3 +87,30 @@ def can_run_sync(settings: Settings) -> bool:
         and settings.audiobookshelf_api_key
         and settings.audiobookshelf_api_key.strip()
     )
+
+
+def get_storygraph_auth_method(settings: Settings) -> str:
+    """Determine which StoryGraph authentication method to use.
+    
+    Returns:
+        "username_password" - if username and password are configured
+        "cookie" - if session cookie is configured
+        "none" - if neither is configured
+    """
+    has_credentials = (
+        settings.storygraph_username
+        and settings.storygraph_username.strip()
+        and settings.storygraph_password
+        and settings.storygraph_password.strip()
+    )
+    has_cookie = (
+        settings.storygraph_session_cookie
+        and settings.storygraph_session_cookie.strip()
+    )
+    
+    if has_credentials:
+        return "username_password"
+    elif has_cookie:
+        return "cookie"
+    else:
+        return "none"
