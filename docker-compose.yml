@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  audiobook-sync:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: audiobook-sync
+    ports:
+      - "8000:8000"
+    environment:
+      - AUDIOBOOKSHELF_URL=${AUDIOBOOKSHELF_URL:-http://localhost:13378}
+      - AUDIOBOOKSHELF_API_KEY=${AUDIOBOOKSHELF_API_KEY}
+      - HARDCOVERS_API_KEY=${HARDCOVERS_API_KEY}
+      - STORYGRAPH_SESSION_COOKIE=${STORYGRAPH_SESSION_COOKIE}
+      - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES:-10}
+      - AUTO_MATCH_ON_FIRST_RUN=${AUTO_MATCH_ON_FIRST_RUN:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DATABASE_URL=sqlite:////data/sync.db
+      - WEB_UI_PORT=8000
+      - WEB_UI_HOST=0.0.0.0
+    volumes:
+      - audiobook-sync-data:/data
+    restart: unless-stopped
+    networks:
+      - audiobook-sync-net
+
+volumes:
+  audiobook-sync-data:
+    driver: local
+
+networks:
+  audiobook-sync-net:
+    driver: bridge
