@@ -22,15 +22,33 @@ Synchronize your audiobook progress from AudiobookShelf to Hardcovers and StoryG
 
 ## Quick Start
 
-### 1. Clone and Setup
+### Option A: Using Pre-built Image (Recommended)
 
 ```bash
-git clone <repo-url> audiobook-sync
-cd audiobook-sync
-cp .env.example .env
+# Create .env file
+cat > .env << EOF
+AUDIOBOOKSHELF_URL=http://your-abs-instance:13378
+AUDIOBOOKSHELF_API_KEY=your_abs_api_key
+HARDCOVERS_API_KEY=your_hardcovers_key
+STORYGRAPH_SESSION_COOKIE=your_storygraph_cookie
+EOF
+
+# Run with pre-built image from GitHub Container Registry
+docker run -d \
+  --name audiobook-sync \
+  -p 8000:8000 \
+  -v audiobook-sync-data:/data \
+  --env-file .env \
+  ghcr.io/adam2893/audiobooksync:latest
 ```
 
-### 2. Configure Environment
+### Option B: Clone and Build Locally
+
+```bash
+git clone https://github.com/adam2893/audiobooksync.git
+cd audiobooksync
+cp .env.example .env
+```
 
 Edit `.env` with your values:
 
@@ -41,7 +59,7 @@ HARDCOVERS_API_KEY=your_hardcovers_key
 STORYGRAPH_SESSION_COOKIE=your_storygraph_cookie
 ```
 
-### 3. Run with Docker Compose
+Run with Docker Compose:
 
 ```bash
 docker-compose up -d
@@ -242,9 +260,21 @@ python -m src.main
 pytest tests/
 ```
 
+## Docker Image
+
+Pre-built images are automatically published to GitHub Container Registry whenever code is pushed to the main branch.
+
+**Image**: `ghcr.io/adam2893/audiobooksync:latest`
+
+Pull the latest image:
+
+```bash
+docker pull ghcr.io/adam2893/audiobooksync:latest
+```
+
 ## Unraid Deployment
 
-Create an Unraid container template using this docker-compose.yml. Users can:
+Create an Unraid container template using the pre-built image or docker-compose.yml. Users can:
 
 1. Map `/data` volume to persist SQLite database
 2. Set environment variables for each credential
