@@ -635,6 +635,9 @@
             const method = document.querySelector('input[name="sgAuthMethod"]:checked').value;
             document.getElementById('sgCookieSection').style.display = method === 'cookie' ? 'block' : 'none';
             document.getElementById('sgPasswordSection').style.display = method === 'password' ? 'block' : 'none';
+            // Clear errors when switching methods
+            document.getElementById('sgError').innerHTML = '';
+            document.getElementById('sgSuccess').innerHTML = '';
         }
 
         async function validateStoryGraphCookie() {
@@ -646,17 +649,26 @@
             }
 
             document.getElementById('sgCookieLoading').style.display = 'inline-block';
+            document.getElementById('sgError').innerHTML = '';
+            document.getElementById('sgSuccess').innerHTML = '';
+            
             try {
                 const response = await fetch('/api/validate/storygraph', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ auth_method: 'cookie', session_cookie: cookie })
                 });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    showError('sgError', 'Error: ', error.detail || 'Request failed');
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (data.valid) {
                     showSuccess('sgSuccess', '✓ ' + data.message);
-                    document.getElementById('sgError').classList.remove('show');
                 } else {
                     showError('sgError', 'Connection Failed: ', data.message + ' - Extract a fresh cookie from your browser');
                 }
@@ -677,17 +689,26 @@
             }
 
             document.getElementById('sgPasswordLoading').style.display = 'inline-block';
+            document.getElementById('sgError').innerHTML = '';
+            document.getElementById('sgSuccess').innerHTML = '';
+            
             try {
                 const response = await fetch('/api/validate/storygraph', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ auth_method: 'password', username, password })
                 });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    showError('sgError', 'Error: ', error.detail || 'Request failed');
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (data.valid) {
                     showSuccess('sgSuccess', '✓ ' + data.message);
-                    document.getElementById('sgError').classList.remove('show');
                 } else {
                     showError('sgError', 'Connection Failed: ', data.message);
                 }

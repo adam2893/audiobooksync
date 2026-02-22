@@ -16,6 +16,7 @@ from src.sync.scheduler import SyncScheduler
 from src.sync.matcher import BookMatcher
 from src.sync.worker import SyncWorker
 from src.logger import setup_logger
+from src.models import AppState
 
 logger = setup_logger(__name__)
 
@@ -55,6 +56,51 @@ app = FastAPI(title="AudioBook Sync", version="0.1.0")
 # ============================================================================
 
 
+
+def save_storygraph_credentials(db, auth_method: str, session_cookie: str = None, username: str = None, password: str = None):
+    """Save StoryGraph credentials to database for persistence."""
+    try:
+        # Save auth method
+        method_entry = db.query(AppState).filter(AppState.key == "storygraph_auth_method").first()
+        if method_entry:
+            method_entry.value = auth_method
+        else:
+            method_entry = AppState(key="storygraph_auth_method", value=auth_method)
+            db.add(method_entry)
+        
+        if auth_method == "cookie" and session_cookie:
+            cookie_entry = db.query(AppState).filter(AppState.key == "storygraph_session_cookie").first()
+            if cookie_entry:
+                cookie_entry.value = session_cookie
+            else:
+                cookie_entry = AppState(key="storygraph_session_cookie", value=session_cookie)
+                db.add(cookie_entry)
+        
+        if auth_method == "password":
+            if username:
+                user_entry = db.query(AppState).filter(AppState.key == "storygraph_username").first()
+                if user_entry:
+                    user_entry.value = username
+                else:
+                    user_entry = AppState(key="storygraph_username", value=username)
+                    db.add(user_entry)
+            
+            if password:
+                pass_entry = db.query(AppState).filter(AppState.key == "storygraph_password").first()
+                if pass_entry:
+                    pass_entry.value = password
+                else:
+                    pass_entry = AppState(key="storygraph_password", value=password)
+                    db.add(pass_entry)
+        
+        db.commit()
+        logger.info(f"Saved StoryGraph credentials ({auth_method}) to database")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to save StoryGraph credentials: {e}")
+        raise
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup."""
@@ -81,6 +127,32 @@ async def startup_event():
         # Initialize database and scheduler
         app_state["scheduler"] = SyncScheduler(app_state["settings"])
         await app_state["scheduler"].initialize()
+
+        # Load saved StoryGraph credentials from database
+        try:
+            db = app_state["scheduler"].get_session()
+            auth_method_entry = db.query(AppState).filter(AppState.key == "storygraph_auth_method").first()
+            if auth_method_entry:
+                auth_method = auth_method_entry.value
+                logger.info(f"Found saved StoryGraph auth method: {auth_method}")
+                
+                if auth_method == "cookie":
+                    cookie_entry = db.query(AppState).filter(AppState.key == "storygraph_session_cookie").first()
+                    if cookie_entry:
+                        app_state["settings"].storygraph_session_cookie = cookie_entry.value
+                        logger.info("Loaded saved StoryGraph session cookie")
+                
+                elif auth_method == "password":
+                    user_entry = db.query(AppState).filter(AppState.key == "storygraph_username").first()
+                    pass_entry = db.query(AppState).filter(AppState.key == "storygraph_password").first()
+                    if user_entry:
+                        app_state["settings"].storygraph_username = user_entry.value
+                    if pass_entry:
+                        app_state["settings"].storygraph_password = pass_entry.value
+                    logger.info("Loaded saved StoryGraph credentials")
+            db.close()
+        except Exception as e:
+            logger.warning(f"Could not load saved StoryGraph credentials: {e}")
 
         # Initialize API clients (even if config is incomplete, for testing)
         try:
@@ -272,12 +344,18 @@ async def validate_hardcovers():
 
 
 @app.post("/api/validate/storygraph")
-async def validate_storygraph(auth_method: str = None, session_cookie: str = None, username: str = None, password: str = None):
+async def validate_storygraph(
+    auth_method: str = None, 
+    session_cookie: str = None, 
+    username: str = None, 
+    password: str = None,
+    db = Depends(get_db)
+):
     """Validate StoryGraph connection (supports both cookie and password auth)."""
-    if not auth_method:
+    if not auth_method or auth_method not in ["cookie", "password"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="auth_method is required (cookie or password)",
+            detail="auth_method is required and must be 'cookie' or 'password'",
         )
     
     try:
@@ -291,13 +369,18 @@ async def validate_storygraph(auth_method: str = None, session_cookie: str = Non
             await temp_client.close()
             
             if is_valid:
-                # Store the cookie in settings
+                # Store the cookie in settings and database
                 app_state["settings"].storygraph_session_cookie = session_cookie
+                save_storygraph_credentials(db, auth_method="cookie", session_cookie=session_cookie)
+                # Reinitialize client
+                if app_state["storygraph_client"]:
+                    await app_state["storygraph_client"].close()
                 app_state["storygraph_client"] = StoryGraphClient(
                     session_cookie=session_cookie,
                     username=app_state["settings"].storygraph_username,
                     password=app_state["settings"].storygraph_password,
                 )
+                logger.info("StoryGraph cookie authentication successful")
                 return {"valid": True, "message": "Cookie validated - read-only mode enabled"}
             else:
                 return {"valid": False, "message": "Cookie validation failed - cookie may be expired"}
@@ -312,14 +395,19 @@ async def validate_storygraph(auth_method: str = None, session_cookie: str = Non
             await temp_client.close()
             
             if is_valid:
-                # Store credentials in settings
+                # Store credentials in settings and database
                 app_state["settings"].storygraph_username = username
                 app_state["settings"].storygraph_password = password
+                save_storygraph_credentials(db, auth_method="password", username=username, password=password)
+                # Reinitialize client
+                if app_state["storygraph_client"]:
+                    await app_state["storygraph_client"].close()
                 app_state["storygraph_client"] = StoryGraphClient(
                     session_cookie=app_state["settings"].storygraph_session_cookie,
                     username=username,
                     password=password,
                 )
+                logger.info("StoryGraph password authentication successful")
                 return {"valid": True, "message": "Credentials validated - read+write mode enabled (requires storygraph-api library)"}
             else:
                 return {"valid": False, "message": "Invalid username or password"}
@@ -329,7 +417,7 @@ async def validate_storygraph(auth_method: str = None, session_cookie: str = Non
             
     except Exception as e:
         logger.error(f"Error validating StoryGraph: {e}")
-        return {"valid": False, "message": f"Error: {str(e)}"}
+        return {"valid": False, "message": f"Validation error: {str(e)}"}
 
 
 @app.post("/api/setup/complete")

@@ -126,6 +126,20 @@ class StoryGraphClient:
             return []
         
         try:
+            # Try to use storygraph-api if using password auth
+            if self.auth_method == "username_password":
+                try:
+                    from storygraph_api import StorygraphClient as SGApi
+                    
+                    api_client = SGApi()
+                    # Search would require login - for now return empty
+                    logger.debug("storygraph-api search not fully implemented")
+                    return []
+                except ImportError:
+                    logger.warning("storygraph-api not installed, falling back to HTML scraping")
+                    # Continue to HTML scraping below
+            
+            # HTML scraping for cookie auth or fallback
             session = await self._get_session()
             response = await session.get(
                 f"{self.BASE_URL}/search",
@@ -248,9 +262,12 @@ class StoryGraphClient:
         
         try:
             session = await self._get_session()
+            if session is None:
+                return False
             response = await session.get(self.BASE_URL)
             # If we get a successful response, connection is valid
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.error(f"StoryGraph connection validation failed: {e}")
             return False
 
