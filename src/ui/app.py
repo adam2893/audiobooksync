@@ -271,6 +271,67 @@ async def validate_hardcovers():
         return {"valid": False, "message": f"Error: {str(e)}"}
 
 
+@app.post("/api/validate/storygraph")
+async def validate_storygraph(auth_method: str = None, session_cookie: str = None, username: str = None, password: str = None):
+    """Validate StoryGraph connection (supports both cookie and password auth)."""
+    if not auth_method:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="auth_method is required (cookie or password)",
+        )
+    
+    try:
+        if auth_method == "cookie":
+            if not session_cookie or not session_cookie.strip():
+                return {"valid": False, "message": "Session cookie is required"}
+            
+            # Create temporary client with cookie
+            temp_client = StoryGraphClient(session_cookie=session_cookie)
+            is_valid = await temp_client.validate_connection()
+            await temp_client.close()
+            
+            if is_valid:
+                # Store the cookie in settings
+                app_state["settings"].storygraph_session_cookie = session_cookie
+                app_state["storygraph_client"] = StoryGraphClient(
+                    session_cookie=session_cookie,
+                    username=app_state["settings"].storygraph_username,
+                    password=app_state["settings"].storygraph_password,
+                )
+                return {"valid": True, "message": "Cookie validated - read-only mode enabled"}
+            else:
+                return {"valid": False, "message": "Cookie validation failed - cookie may be expired"}
+        
+        elif auth_method == "password":
+            if not username or not username.strip() or not password or not password.strip():
+                return {"valid": False, "message": "Username and password are required"}
+            
+            # Create temporary client with credentials
+            temp_client = StoryGraphClient(username=username, password=password)
+            is_valid = await temp_client.validate_connection()
+            await temp_client.close()
+            
+            if is_valid:
+                # Store credentials in settings
+                app_state["settings"].storygraph_username = username
+                app_state["settings"].storygraph_password = password
+                app_state["storygraph_client"] = StoryGraphClient(
+                    session_cookie=app_state["settings"].storygraph_session_cookie,
+                    username=username,
+                    password=password,
+                )
+                return {"valid": True, "message": "Credentials validated - read+write mode enabled (requires storygraph-api library)"}
+            else:
+                return {"valid": False, "message": "Invalid username or password"}
+        
+        else:
+            return {"valid": False, "message": "Invalid auth_method (use 'cookie' or 'password')"}
+            
+    except Exception as e:
+        logger.error(f"Error validating StoryGraph: {e}")
+        return {"valid": False, "message": f"Error: {str(e)}"}
+
+
 @app.post("/api/setup/complete")
 async def setup_complete():
     """Signal that setup wizard is complete and AudiobookShelf is configured."""

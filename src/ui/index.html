@@ -400,31 +400,69 @@
                 <div class="step" data-step="3">
                     <h2>Step 3: StoryGraph Connection</h2>
                     <div class="info-box">
-                        <strong>ℹ️ Optional:</strong> Sync your reading progress to StoryGraph
+                        <strong>ℹ️ Optional:</strong> Sync your reading progress to StoryGraph (choose one authentication method)
                     </div>
                     
                     <div class="error-message" id="sgError"></div>
                     <div class="success-message" id="sgSuccess"></div>
 
                     <div class="form-group">
-                        <label>How to get your session cookie:</label>
-                        <ol style="margin-left: 20px; margin-top: 10px; line-height: 1.8;">
-                            <li>Go to <strong>storygraph.com</strong> and log in</li>
-                            <li>Press <strong>F12</strong> to open Developer Tools</li>
-                            <li>Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>storygraph.com</strong></li>
-                            <li>Find the <strong>_storygraph_session</strong> cookie</li>
-                            <li>Copy its value (long string) and paste below</li>
-                        </ol>
+                        <label>Authentication Method:</label>
+                        <div style="margin-top: 10px;">
+                            <label style="display: flex; align-items: center; margin-bottom: 10px; font-weight: normal;">
+                                <input type="radio" name="sgAuthMethod" value="cookie" checked onchange="updateSGAuthUI()">
+                                <span style="margin-left: 8px;"><strong>Session Cookie</strong> (Read-only, more secure)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; margin-bottom: 10px; font-weight: normal;">
+                                <input type="radio" name="sgAuthMethod" value="password" onchange="updateSGAuthUI()">
+                                <span style="margin-left: 8px;"><strong>Username/Password</strong> (Read+Write, full sync)</span>
+                            </label>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="sgCookie">Session Cookie</label>
-                        <textarea id="sgCookie" placeholder="Paste your _storygraph_session cookie here" rows="4"></textarea>
+                    <!-- Cookie Auth Option -->
+                    <div id="sgCookieSection">
+                        <div class="form-group">
+                            <label>How to get your session cookie:</label>
+                            <ol style="margin-left: 20px; margin-top: 10px; line-height: 1.8;">
+                                <li>Go to <strong>storygraph.com</strong> and log in</li>
+                                <li>Press <strong>F12</strong> to open Developer Tools</li>
+                                <li>Go to <strong>Application</strong> → <strong>Cookies</strong> → <strong>storygraph.com</strong></li>
+                                <li>Find the <strong>_storygraph_session</strong> cookie</li>
+                                <li>Copy its value (long string) and paste below</li>
+                            </ol>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="sgCookie">Session Cookie</label>
+                            <textarea id="sgCookie" placeholder="Paste your _storygraph_session cookie here" rows="4"></textarea>
+                        </div>
+
+                        <button class="btn-primary" onclick="validateStoryGraphCookie()">
+                            Test Cookie Connection <span class="loading" id="sgCookieLoading" style="display: none;"></span>
+                        </button>
                     </div>
 
-                    <button class="btn-primary" onclick="validateStoryGraph()">
-                        Test Connection <span class="loading" id="sgLoading" style="display: none;"></span>
-                    </button>
+                    <!-- Password Auth Option -->
+                    <div id="sgPasswordSection" style="display: none;">
+                        <div class="info-box">
+                            <strong>⚠️ Note:</strong> Your username and password will be stored in the application's database
+                        </div>
+
+                        <div class="form-group">
+                            <label for="sgUsername">StoryGraph Username</label>
+                            <input type="text" id="sgUsername" placeholder="Your StoryGraph username" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="sgPassword">StoryGraph Password</label>
+                            <input type="password" id="sgPassword" placeholder="Your StoryGraph password" />
+                        </div>
+
+                        <button class="btn-primary" onclick="validateStoryGraphPassword()">
+                            Test Password Connection <span class="loading" id="sgPasswordLoading" style="display: none;"></span>
+                        </button>
+                    </div>
 
                     <div class="button-group">
                         <button class="btn-secondary" onclick="goToStep(2)">← Back</button>
@@ -593,7 +631,13 @@
             }
         }
 
-        async function validateStoryGraph() {
+        function updateSGAuthUI() {
+            const method = document.querySelector('input[name="sgAuthMethod"]:checked').value;
+            document.getElementById('sgCookieSection').style.display = method === 'cookie' ? 'block' : 'none';
+            document.getElementById('sgPasswordSection').style.display = method === 'password' ? 'block' : 'none';
+        }
+
+        async function validateStoryGraphCookie() {
             const cookie = document.getElementById('sgCookie').value.trim();
 
             if (!cookie) {
@@ -601,12 +645,12 @@
                 return;
             }
 
-            document.getElementById('sgLoading').style.display = 'inline-block';
+            document.getElementById('sgCookieLoading').style.display = 'inline-block';
             try {
                 const response = await fetch('/api/validate/storygraph', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cookie })
+                    body: JSON.stringify({ auth_method: 'cookie', session_cookie: cookie })
                 });
                 const data = await response.json();
                 
@@ -619,7 +663,38 @@
             } catch (err) {
                 showError('sgError', 'Error: ', err.message);
             } finally {
-                document.getElementById('sgLoading').style.display = 'none';
+                document.getElementById('sgCookieLoading').style.display = 'none';
+            }
+        }
+
+        async function validateStoryGraphPassword() {
+            const username = document.getElementById('sgUsername').value.trim();
+            const password = document.getElementById('sgPassword').value.trim();
+
+            if (!username || !password) {
+                showError('sgError', 'Error: ', 'Please enter both username and password');
+                return;
+            }
+
+            document.getElementById('sgPasswordLoading').style.display = 'inline-block';
+            try {
+                const response = await fetch('/api/validate/storygraph', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auth_method: 'password', username, password })
+                });
+                const data = await response.json();
+                
+                if (data.valid) {
+                    showSuccess('sgSuccess', '✓ ' + data.message);
+                    document.getElementById('sgError').classList.remove('show');
+                } else {
+                    showError('sgError', 'Connection Failed: ', data.message);
+                }
+            } catch (err) {
+                showError('sgError', 'Error: ', err.message);
+            } finally {
+                document.getElementById('sgPasswordLoading').style.display = 'none';
             }
         }
 
