@@ -176,3 +176,117 @@ class SyncWorker:
         if status in ["completed", "failed"]:
             job.completed_at = datetime.utcnow()
         db.commit()
+    async def run_periodic_sync(self, db: Session) -> dict:
+        """
+        Periodic sync function to run on a schedule.
+        
+        Fetches new books from AudiobookShelf and syncs progress to all mapped platforms.
+        
+        Args:
+            db: Database session
+            
+        Returns:
+            Dict with sync results: {synced_count, failed_count, errors}
+        """
+        logger.info("Starting periodic sync...")
+        
+        # Create sync job for auditing
+        job = await self.create_sync_job(db, "sync_progress", 0)
+        
+        synced_count = 0
+        failed_count = 0
+        errors = []
+        
+        try:
+            # Get all libraries from AudiobookShelf
+            libraries = await self.abs.get_user_libraries()
+            if not libraries:
+                logger.warning("No libraries found in AudiobookShelf")
+                await self.update_sync_job(db, job, 0, "completed")
+                return {"synced_count": 0, "failed_count": 0, "errors": []}
+            
+            total_books = 0
+            
+            # Iterate through each library and sync books
+            for library in libraries:
+                library_id = library.get("id")
+                try:
+                    items = await self.abs.get_library_items(library_id)
+                    total_books += len(items)
+                    
+                    for item in items:
+                        try:
+                            book_id = item.get("id")
+                            
+                            # Get progress from AudiobookShelf
+                            progress_data = await self.abs.get_progress(book_id)
+                            if not progress_data:
+                                continue
+                            
+                            # Get or create book in database
+                            book = db.query(AudioBook).filter(
+                                AudioBook.audiobookshelf_id == book_id
+                            ).first()
+                            
+                            if not book:
+                                book = AudioBook(
+                                    audiobookshelf_id=book_id,
+                                    title=item.get("title", "Unknown"),
+                                    author=item.get("author", "Unknown"),
+                                    isbn=item.get("isbn", ""),
+                                )
+                                db.add(book)
+                                db.commit()
+                                db.refresh(book)
+                            
+                            # Update book progress
+                            book.current_progress = progress_data.get("progress", 0)
+                            book.is_finished = progress_data.get("isFinished", False)
+                            book.total_duration = progress_data.get("duration", 0)
+                            book.last_synced_at = datetime.utcnow()
+                            db.commit()
+                            
+                            # Sync to all mapped platforms
+                            if await self.sync_book_progress(book, db):
+                                synced_count += 1
+                            else:
+                                failed_count += 1
+                                
+                        except Exception as e:
+                            failed_count += 1
+                            error_msg = f"Error syncing book {book_id}: {str(e)}"
+                            logger.error(error_msg)
+                            errors.append(error_msg)
+                        
+                        # Update job progress
+                        await self.update_sync_job(db, job, synced_count + failed_count)
+                        
+                except Exception as e:
+                    error_msg = f"Error syncing library {library_id}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+            
+            # Mark job as completed
+            await self.update_sync_job(
+                db, job, synced_count + failed_count, "completed"
+            )
+            logger.info(
+                f"Periodic sync completed: {synced_count} synced, {failed_count} failed"
+            )
+            
+            return {
+                "synced_count": synced_count,
+                "failed_count": failed_count,
+                "total_books": total_books,
+                "errors": errors,
+            }
+            
+        except Exception as e:
+            error_msg = f"Fatal error during periodic sync: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            await self.update_sync_job(db, job, 0, "failed", error_msg)
+            return {
+                "synced_count": 0,
+                "failed_count": 0,
+                "errors": [error_msg],
+            }

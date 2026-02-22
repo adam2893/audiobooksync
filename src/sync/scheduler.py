@@ -125,13 +125,13 @@ class SyncScheduler:
 
     async def get_sync_stats(self) -> dict:
         """Get current sync statistics."""
+        db = None
         try:
             db = self.get_session()
             total_books = db.query(AudioBook).count()
             synced_books = db.query(AudioBook).filter(
                 AudioBook.last_synced_at.isnot(None)
             ).count()
-            db.close()
 
             return {
                 "total_books": total_books,
@@ -147,3 +147,6 @@ class SyncScheduler:
                 "pending_books": 0,
                 "scheduler_running": False,
             }
+        finally:
+            if db:
+                db.close()

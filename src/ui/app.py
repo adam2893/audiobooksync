@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import os
 
-from src.config import get_settings, validate_settings, Settings
+from src.config import get_settings, validate_settings, can_run_sync, Settings
 from src.apis.audiobookshelf import AudiobookShelfClient
 from src.apis.hardcovers import HardcoversClient
 from src.apis.storygraph import StoryGraphClient
@@ -64,14 +64,19 @@ async def startup_event():
         # Load settings
         app_state["settings"] = get_settings()
         
-        # Validate settings
+        # Validate settings (only required fields must be valid)
         app_state["config_errors"] = validate_settings(app_state["settings"])
 
+        # Check if we can actually run sync (requires AudiobookShelf)
+        can_sync = can_run_sync(app_state["settings"])
+        
         if app_state["config_errors"]:
             logger.warning(f"Configuration errors: {app_state['config_errors']}")
-        else:
-            logger.info("All configuration validated successfully")
+        elif can_sync:
+            logger.info("AudiobookShelf is configured - sync can proceed")
             app_state["setup_complete"] = True
+        else:
+            logger.info("AudiobookShelf not configured - user must set up via web UI")
 
         # Initialize database and scheduler
         app_state["scheduler"] = SyncScheduler(app_state["settings"])
@@ -106,12 +111,25 @@ async def startup_event():
         except Exception as e:
             logger.error(f"Error initializing API clients: {e}")
 
-        # Start scheduler if setup is complete
-        if app_state["setup_complete"] and not app_state["config_errors"]:
+        # Start scheduler if AudiobookShelf is configured
+        if can_sync and app_state["worker"]:
             try:
-                await app_state["scheduler"].add_periodic_sync_job()
+                # Create a wrapper function for the periodic sync
+                async def periodic_sync_job():
+                    """Periodic sync job wrapper."""
+                    db = app_state["scheduler"].get_session()
+                    try:
+                        await app_state["worker"].run_periodic_sync(db)
+                    finally:
+                        db.close()
+                
+                await app_state["scheduler"].add_periodic_sync_job(
+                    sync_function=periodic_sync_job,
+                    interval_minutes=app_state["settings"].sync_interval_minutes,
+                    job_id="periodic_sync"
+                )
                 await app_state["scheduler"].start()
-                logger.info("Scheduler started")
+                logger.info("Scheduler started with periodic sync")
             except Exception as e:
                 logger.error(f"Error starting scheduler: {e}")
 
@@ -253,20 +271,47 @@ async def validate_hardcovers():
 
 @app.post("/api/setup/complete")
 async def setup_complete():
-    """Signal that setup wizard is complete."""
+    """Signal that setup wizard is complete and AudiobookShelf is configured."""
+    if not can_run_sync(app_state["settings"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AudiobookShelf URL and API key must be configured before starting sync",
+        )
+    
     app_state["setup_complete"] = True
     logger.info("Setup marked as complete, triggering initial sync...")
     
-    if app_state["scheduler"]:
+    if app_state["scheduler"] and app_state["worker"]:
         try:
-            # Add periodic sync job if not already added
-            await app_state["scheduler"].add_periodic_sync_job()
-            
-            # If auto-match is enabled, start scheduler
-            if app_state["settings"].auto_match_on_first_run:
+            # Check if scheduler is already running
+            if app_state["scheduler"].scheduler.running:
+                logger.info("Scheduler already running")
+            else:
+                # Create sync function wrapper
+                async def periodic_sync_job():
+                    """Periodic sync job wrapper."""
+                    db = app_state["scheduler"].get_session()
+                    try:
+                        await app_state["worker"].run_periodic_sync(db)
+                    finally:
+                        db.close()
+                
+                # Add periodic sync job
+                await app_state["scheduler"].add_periodic_sync_job(
+                    sync_function=periodic_sync_job,
+                    interval_minutes=app_state["settings"].sync_interval_minutes,
+                    job_id="periodic_sync"
+                )
+                
+                # Start scheduler
                 await app_state["scheduler"].start()
+                logger.info("Scheduler started")
         except Exception as e:
             logger.error(f"Error starting scheduler: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to start scheduler: {str(e)}",
+            )
     
     return {"message": "Setup complete, sync scheduled"}
 

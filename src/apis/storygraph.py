@@ -116,33 +116,27 @@ class StoryGraphClient:
         """
         Update reading progress for a book.
         
+        Note: StoryGraph does not have a public API for this. This would require
+        HTML form scraping and authentication. Currently returns False to indicate
+        updates are not supported via the public interface.
+        
         Args:
             book_id: StoryGraph book ID
             progress: Progress as percentage (0-100) or pages
             is_finished: Whether the book is finished
         
         Returns:
-            True if successful, False otherwise
+            False - StoryGraph read-only (no public API for progress updates)
         """
         if not self.session_cookie:
             return False
         
-        try:
-            session = await self._get_session()
-            
-            # StoryGraph API endpoint for updating progress
-            response = await session.post(
-                f"{self.BASE_URL}/api/books/{book_id}/update-progress",
-                json={
-                    "progress": progress,
-                    "is_finished": is_finished,
-                },
-            )
-            
-            return response.status_code in [200, 201]
-        except Exception as e:
-            logger.error(f"Failed to update progress for book {book_id}: {e}")
-            return False
+        logger.warning(
+            f"StoryGraph progress update requested for book {book_id}, "
+            "but StoryGraph does not have a public API for this. "
+            "Updates must be done manually on the StoryGraph website."
+        )
+        return False
 
     async def validate_connection(self) -> bool:
         """Validate connection to StoryGraph."""

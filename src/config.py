@@ -50,30 +50,33 @@ def validate_settings(settings: Settings) -> dict[str, str]:
     """
     errors = {}
 
-    # Validate AudiobookShelf (required)
-    if not settings.audiobookshelf_url or not settings.audiobookshelf_url.strip():
-        errors["audiobookshelf_url"] = (
-            "AudiobookShelf URL is required. "
-            "Set AUDIOBOOKSHELF_URL environment variable (e.g., http://localhost:13378)"
-        )
-    if not settings.audiobookshelf_api_key or not settings.audiobookshelf_api_key.strip():
-        errors["audiobookshelf_api_key"] = (
-            "AudiobookShelf API key is required. "
-            "Get it from AudiobookShelf settings → API Tokens"
-        )
+    # Validate AudiobookShelf (optional at startup - can be configured via web UI)
+    # Only validate if URL is provided
+    if settings.audiobookshelf_url and settings.audiobookshelf_url.strip():
+        if not settings.audiobookshelf_api_key or not settings.audiobookshelf_api_key.strip():
+            errors["audiobookshelf_api_key"] = (
+                "If AudiobookShelf URL is configured, API key is required. "
+                "Get it from AudiobookShelf settings → API Tokens"
+            )
+    # If URL is not set, it's not an error - user can configure via web UI later
 
-    # Validate Hardcovers (optional but warn if not set)
-    if not settings.hardcovers_api_key or not settings.hardcovers_api_key.strip():
-        errors["hardcovers_api_key"] = (
-            "Hardcovers API key is not set (optional). "
-            "Get it from hardcover.app/account/api to enable Hardcovers sync"
-        )
+    # Validate Hardcovers (optional - truly optional, no errors)
+    # These are optional integrations, don't add to errors dict
 
-    # Validate StoryGraph (optional but warn if not set)
-    if not settings.storygraph_session_cookie or not settings.storygraph_session_cookie.strip():
-        errors["storygraph_session_cookie"] = (
-            "StoryGraph session cookie is not set (optional). "
-            "See documentation for how to extract your session cookie to enable StoryGraph sync"
-        )
+    # Validate StoryGraph (optional - truly optional, no errors)
+    # These are optional integrations, don't add to errors dict
 
     return errors
+
+
+def can_run_sync(settings: Settings) -> bool:
+    """Check if minimum required settings are present to run sync.
+    
+    Sync requires AudiobookShelf to be configured.
+    """
+    return bool(
+        settings.audiobookshelf_url
+        and settings.audiobookshelf_url.strip()
+        and settings.audiobookshelf_api_key
+        and settings.audiobookshelf_api_key.strip()
+    )

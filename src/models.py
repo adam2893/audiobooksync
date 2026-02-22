@@ -1,7 +1,7 @@
 """Database models for AudioBook Sync."""
 
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, Float, Boolean, ForeignKey
+from sqlalchemy import Column, String, Integer, DateTime, Float, Boolean, ForeignKey, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -28,8 +28,8 @@ class AudioBook(Base):
 
     # Last sync timestamps
     last_synced_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
     platform_mappings = relationship("BookMapping", back_populates="audiobook", cascade="all, delete-orphan")
@@ -47,8 +47,8 @@ class BookMapping(Base):
     match_confidence = Column(Float, default=1.0)  # 0.0 to 1.0
     is_manual_override = Column(Boolean, default=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
     audiobook = relationship("AudioBook", back_populates="platform_mappings")
@@ -62,7 +62,7 @@ class SyncJob(Base):
     id = Column(Integer, primary_key=True, index=True)
     job_type = Column(String)  # "auto_match", "sync_progress", "manual_match"
     status = Column(String)  # "pending", "running", "completed", "failed"
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(String, nullable=True)
     total_items = Column(Integer, default=0)
@@ -79,4 +79,4 @@ class AppState(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String, unique=True, index=True)
     value = Column(String)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
