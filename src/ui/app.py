@@ -269,7 +269,7 @@ async def validate_storygraph():
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve main UI page."""
-    html_file = Path(__file__).parent / "ui" / "index.html"
+    html_file = Path(__file__).parent / "index.html"
     if html_file.exists():
         return html_file.read_text()
     return "<h1>AudioBook Sync</h1><p>UI not found</p>"
